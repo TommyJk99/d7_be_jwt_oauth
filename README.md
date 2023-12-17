@@ -1,26 +1,31 @@
 # Indice
 
+🟢 ULTIMATO
+🟡 DA SISTEMARE
+🟠 DA FINIRE
+🔴 RIFARE
+
 -   [Express](#express)
-    -   [Inizializzazione](#middleware-di-errore-più-complesso-con-spunti-interessanti)
-    -   [Routing](#cose-utili-per-il-routing)
-    -   [Tenere traccia delle rotte](#tenere-traccia-delle-rotte)
+    -   [Inizializzazione🔴](#middleware-di-errore-più-complesso-con-spunti-interessanti)
+    -   [Routing🔴](#cose-utili-per-il-routing)
+    -   [Tenere traccia delle rotte🟡](#tenere-traccia-delle-rotte)
     -   [Middlewares](#middlewares)
     -   [Pagination](#pagination)
     -   [Multer e upload file](#importare-file-con-multer)
     -   [CDN](#cdn-content-delivery-network)
     -   [Cloudinary](#cloudinary)
-    -   [Autenticazione](#autenticazione)
--   [MongoDB Atlas](#mongodb-atlas)
+    -   [Autenticazione 🟠](#autenticazione)
+-   [MongoDB Atlas 🟠](#mongodb-atlas)
     -   [Queries](#queries)
     -   [Queries su MDB Compass](#utilizzo-queries-su-mongodb-compass)
     -   [Selettori](#lista-dei-possibili-query-selectors)
--   [Mongoose (con Express)](#mongoose-con-express)
+-   [Mongoose (con Express) 🟠](#mongoose-con-express)
     -   [index.js](#collegarsi-al-db-tramite-mongoose-indexjs)
-    -   [Esempi CRUD](#esempi-crud)
+    -   [Esempi CRUD 🟡](#esempi-crud)
     -   [Schemi e modelli](#schemi-e-modelli)
     -   [Embedding e referencing](#incosistenza-tra-dati-embedding-e-riferimenti)
     -   [Variabili d'ambiente](#utilizzo-variabili-dambiente)
--   [Altro](#altro)
+-   [Altro 🟠](#altro)
 
 # Express
 
@@ -459,8 +464,8 @@ Una funzione di hashing prende come input una password, un file, un testo etc. e
 4. Velocità di calcolo: le funzioni di hashing sono progettate per essere molto veloci nel calcolare l'hash di un input.
 5. Irreversibilità: è computazionalmente impraticabile determinare l'input originale basandosi solo sull'hash. Questo è diverso dalla crittografia, dove l'obiettivo è poter decifrare i dati.
 
-![Alt text](./z_md_immages/image2.png)
-![Alt text](./z_md_immages/image.png)
+![Alt text](./immagini/image2.png)
+![Alt text](./immagini/image.png)
 
 ### bCrypt
 
@@ -512,7 +517,7 @@ JWT, acronimo di JSON Web Token, è uno standard aperto (RFC 7519) per la creazi
 
 Un token JWT è composto da tre parti separate da punti: l'intestazione (header), il carico utile (payload) e la firma (signature).
 
-![Alt text](./z_md_immages/jwt_ex.png)
+![Alt text](./immagini/jwt_ex.png)
 
 1. L'intestazione (in rosso) contiene informazioni sul tipo di token (JWT) e l'algoritmo di crittografia utilizzato.
 2. Il payload (in viola) include le affermazioni (claims), ovvero le informazioni specifiche dell'utente o altre informazioni necessarie.
@@ -594,6 +599,11 @@ const checkJwt = async (req, res, next) => {
 }
 
 export default checkJwt
+
+//FILE UserRouter, applichiamo il middleware appena creato
+usersRouter.get("/:id", checkJwt, async (req, res) => {
+    res.status(200).json(req.user)
+})
 ```
 
 Descrizione del codice:
@@ -602,6 +612,7 @@ Descrizione del codice:
 -   `const payload = jwt.verify(token, process.env.JWT_SECRET)` utilizza jsonwebtoken per verificare la validità del token utilizzando la chiave segreta (JWT_SECRET). Se il token è valido, estrae il payload
 -   `req.user = await User.findById(payload.id).select("-password")` cerca nel database un utente con l'ID specificato nel payload del token. Esclude la password dal risultato
 -   `next()`: se l'utente è stato trovato e il token è valido, chiama next() per procedere al prossimo middleware nella catena di Express
+-   La parte finale del codice applica il middleware checkJwt a una richiesta GET. Se l'utente fornisce un token valido superando il controllo di checkJwt, la richiesta procede senza problemi.
 
 **Domanda**: come mai si aggiungono le informazioni dell'utente a `req.user` (levando di mezzo la password)?
 
