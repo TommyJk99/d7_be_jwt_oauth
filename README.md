@@ -472,9 +472,11 @@ bCrypt è un algoritmo di hashing per password che implementa un meccanismo di "
 
 ### Come utilizzare bCrypt nel nostro progetto
 
--   `npm install bcrypt` e importare il pacchetto, poi:
+-   `npm install bcrypt` e dopo aver importato il pacchetto:
 
 ```js
+//Questo codice si occupa della registrazione di un utente
+// e dell'hashing della password fornita
 usersRouter.post("/", async (req, res) => {
     const password = await bcrypt.hash(req.body.password, 10)
 
@@ -492,7 +494,7 @@ usersRouter.post("/", async (req, res) => {
 
 -   Per motivi di sicurezza, prima di inviare la risposta al client, la password hashata viene rimossa dall'oggetto utente. Questo passaggio è fondamentale per evitare l'esposizione di dati sensibili, anche se sotto forma di hash. La rimozione avviene attraverso la destrutturazione dell'oggetto, estraendo la password e **v (campo interno di Mongoose) e creando un nuovo oggetto, newUserWithoutPassword, che contiene tutte le proprietà dell'utente eccetto la password e **v.
 
--   E' importante notare che la password in req.body è in formato non hashato, mentre la variabile password contiene la versione hashata della stessa. Quindi, con `...req.body`, tutti i campi del body della richiesta, inclusa la password originale, vengono copiati. Poi, con password, `la password non hashata viene sovrascritta dalla versione hashata` per garantire la sicurezza nel salvataggio nel database.
+-   E' importante notare che la password in `req.body` è in formato non hashato, mentre la variabile password contiene la versione hashata della stessa. Quindi, con `...req.body`, tutti i campi del body della richiesta, inclusa la password originale, vengono copiati. Poi, con password, `la password non hashata viene sovrascritta dalla versione hashata` per garantire la sicurezza nel salvataggio nel database.
 
 -   Concentriamoci su questo comando:
 
@@ -504,9 +506,106 @@ Questo comando utilizza la destrutturazione degli oggetti in JavaScript per otte
 `__v` è un campo interno utilizzato da Mongoose per la gestione della versione del documento. Anche questo viene estratto e ignorato.
 `...newUserWithoutPassword` raccoglie tutte le restanti proprietà di newUser (esclusi password e \_\_v) in un nuovo oggetto chiamato newUserWithoutPassword. Oggetto che viene infine resituito al client se tutto è andato a buon fine.
 
-### JWT
+### JWT definizione
 
-### Come utilizzare JWT nel nostro progetto
+JWT, acronimo di JSON Web Token, è uno standard aperto (RFC 7519) per la creazione di token di accesso che permettono la trasmissione sicura di informazioni tra due parti, tipicamente un server e un client.
+
+Un token JWT è composto da tre parti separate da punti: l'intestazione (header), il carico utile (payload) e la firma (signature).
+
+![Alt text](./z_md_immages/jwt_ex.png)
+
+1. L'intestazione (in rosso) contiene informazioni sul tipo di token (JWT) e l'algoritmo di crittografia utilizzato.
+2. Il payload (in viola) include le affermazioni (claims), ovvero le informazioni specifiche dell'utente o altre informazioni necessarie.
+3. La firma (in blu) è usata per verificare che il messaggio non sia stato modificato lungo il percorso. Viene calcolata utilizzando l'intestazione, il carico utile e <u>una chiave segreta che solo l'emittente del token conosce.</u>
+
+### Come utilizzare JWT (creare e dare al client il token)
+
+-   `npm install jsonwebtoken` e dopo aver importato il pacchetto:
+
+```js
+//questo codice si occupa del CONTROLLO delle credenziali di un utente registrato
+//e della creazione di un token JWT se tutto è andato a buon fine.
+usersRouter.post("/session", async (req, res) => {
+    const { email, password } = req.body
+    const user = await User.findOne({ email })
+
+    if (!user) {
+        return res.status(404).json({ message: "User not found" })
+    }
+
+    const isPasswordCorrect = await bcrypt.compare(password, user.password)
+
+    if (!isPasswordCorrect) {
+        return res.status(401).json({ message: "Invalid credentials" })
+    }
+
+    const payload = { id: user._id }
+
+    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "1h" })
+
+    res.status(200).json({ userId: user._id, token })
+})
+```
+
+Descrizione del codice sopra:
+
+-   il metodo post sul router usersRouter crea un endpoint denominato /session per gestire le richieste di login
+-   dalla richiesta (req.body), vengono estratte l'email e la password fornite dall'utente
+-   utilizzando Mongoose, il sistema cerca nel database un utente che corrisponde all'email fornita. Se non trova nessun utente, restituisce un errore 404 (utente non trovato)
+-   se un utente con l'email fornita viene trovato, il sistema verifica se la password fornita corrisponde alla password hashata salvata nel database usando bcrypt.compare
+-   se l'autenticazione ha successo, viene creato un payload per il JWT. Questo payload contiene l'ID dell'utente (estratto dall'oggetto user)
+-   utilizzando il pacchetto jsonwebtoken, viene generato un token JWT firmandolo con una chiave segreta (process.env.JWT_SECRET) e impostando un tempo di scadenza (expiresIn: "1h")
+-   infine, il token JWT insieme all'ID dell'utente viene inviato al client con una risposta HTTP 200, indicando un processo di autenticazione riuscito
+
+#### NB: Una volta ottenuto il token JWT, ci sono alcuni passaggi tipici che sia il client che l'applicazione seguono:
+
+1. l'utente (o meglio, il client dell'utente, come un browser web) <u>salva il token JWT</u>. Il Token può essere salvato nel localStorage, un cookie, o la sessione del browser
+2. per ogni richiesta successiva al server che richiede autenticazione, <u>il client include il token JWT</u>, solitamente nell'intestazione della richiesta HTTP (spesso come parte dell'intestazione 'Authorization' con il prefisso 'Bearer'). Questo serve a dimostrare che l'utente ha già effettuato l'accesso e ha i permessi necessari per accedere a risorse protette.
+3. ogni volta che il server riceve una richiesta che richiede autenticazione, esamina l'intestazione della richiesta per verificare la presenza del token JWT. Se il token è presente, il server lo valida. Questo significa che verifica la firma del token per assicurarsi che non sia stato manomesso e controlla anche altri aspetti, come la scadenza del token.
+4. se il token è valido, l'utente viene considerato autenticato e può accedere alle risorse richieste.
+
+Vediamo queste cose in dettaglio:
+
+### Come utilizzare JWT (controllo del Token tramite middleware)
+
+Una volta fornito il token JWT all'utente, è essenziale avere un meccanismo che, ad ogni richiesta al server, controlli la validità del token. Questo viene realizzato tramite il seguente middleware:
+
+```js
+//FILE: jwt_middleware.js
+//Questo middleware controlla la validità del token
+import jwt from "jsonwebtoken"
+import { User } from "../models/users.js"
+
+const checkJwt = async (req, res, next) => {
+    try {
+        const token = req.headers.authorization.split(" ")[1]
+        const payload = jwt.verify(token, process.env.JWT_SECRET)
+
+        req.user = await User.findById(payload.id).select("-password")
+
+        if (!req.user) {
+            return res.status(404).json({ message: "User not found" })
+        }
+
+        next()
+    } catch (error) {
+        return res.status(401).json({ message: "Invalid token" })
+    }
+}
+
+export default checkJwt
+```
+
+Descrizione del codice:
+
+-   `const token = req.headers.authorization.split(" ")[1]` estrae il token JWT dall'intestazione 'Authorization' della richiesta, assumendo che il token sia preceduto da una parola (solitamente 'Bearer') seguita da uno spazio
+-   `const payload = jwt.verify(token, process.env.JWT_SECRET)` utilizza jsonwebtoken per verificare la validità del token utilizzando la chiave segreta (JWT_SECRET). Se il token è valido, estrae il payload
+-   `req.user = await User.findById(payload.id).select("-password")` cerca nel database un utente con l'ID specificato nel payload del token. Esclude la password dal risultato
+-   `next()`: se l'utente è stato trovato e il token è valido, chiama next() per procedere al prossimo middleware nella catena di Express
+
+**Domanda**: come mai si aggiungono le informazioni dell'utente a `req.user` (levando di mezzo la password)?
+
+**Risposta**: perchè quando un utente effettua una richiesta al server e viene autenticato tramite un token JWT, è utile avere un modo rapido e conveniente per accedere alle informazioni di quell'utente in seguito nella catena di middleware o nei controller. Impostando req.user, si aggiungono questi dettagli all'oggetto della richiesta (req), rendendoli facilmente accessibili in qualsiasi punto successivo del ciclo di vita della richiesta.
 
 ### OAuth
 
@@ -525,6 +624,8 @@ Questo comando utilizza la destrutturazione degli oggetti in JavaScript per otte
 Le queries in MongoDB sono come istruzioni specializzate che usiamo per comunicare con il database. Attraverso queste istruzioni, possiamo eseguire operazioni di lettura, scrittura e manipolazione dei dati. Le queries ci permettono di cercare informazioni specifiche, aggiornare o inserire nuovi dati nel database secondo criteri definiti. Inoltre, offrono opzioni per ordinare i risultati, limitare la quantità di dati restituiti e proiettare solo le informazioni necessarie.
 
 ### Esempi queries:
+
+Non dare troppo caso a ciò che viene prima di find.
 
 ### 1. Lettura di tutti i documenti
 
@@ -832,7 +933,7 @@ productsRouter.get("/", async (req, res, next) => {
 //è un po' too much al momento quindi per ora ciccia, anche se ci sono spunti interessanti
 ```
 
-## Potenziali vulnerabilità e soluzioni
+## Potenziali vulnerabilità e soluzioni (query)
 
 A che vulnerabilità è sottoposto questo codice?
 
@@ -853,7 +954,66 @@ productsRouter.get("/", async (req, res, next) => {
 })
 ```
 
-Il codice presentato offre diverse potenziali aree di vulnerabilità che un attaccante potrebbe cercare di sfruttare. Ecco alcune tecniche di attacco comuni:
+Il codice presentato offre diverse potenziali aree di vulnerabilità che un attaccante potrebbe cercare di sfruttare. Alcune tecniche di attacco sono ad esempio:
+
+**Iniezione NoSQL**: se i parametri sortBy e order non vengono validati o puliti correttamente, possono essere soggetti a iniezioni NoSQL. Un attaccante potrebbe inserire valori dannosi che manipolano la query del database. Questo può portare a rivelazione non autorizzata di dati, perdita di dati o altri attacchi al database.
+
+**Overflow dei Parametri Numerici**: se limit e skip non vengono verificati o convertiti in numeri in modo sicuro, un attaccante potrebbe inserire valori eccessivamente grandi o non validi, causando potenzialmente un sovraccarico del server o comportamenti imprevisti della query.
+
+**Esposizione di Dati Sensibili**: la query restituisce prodotti con prezzi compresi tra 100 e 600. Se ci sono dati sensibili associati ai prodotti che non dovrebbero essere esposti, questo endpoint potrebbe involontariamente rivelarli.
+
+**Mancanza di Controllo dell'Accesso**: il codice non implementa alcun controllo sull'autenticazione o sull'autorizzazione. Se l'endpoint deve essere accessibile solo da utenti autorizzati, questa mancanza può essere un problema di sicurezza.
+
+**Denial of Service (DoS)**: senza limiti o controlli appropriati sui parametri limit e skip, un attaccante potrebbe facilmente eseguire richieste che gravano pesantemente sul database, potenzialmente portando a un attacco DoS.
+
+### Possibili soluzioni
+
+Nel contesto del codice fornito per il router di Express che gestisce le richieste GET per i prodotti, è importante implementare una validazione e pulizia degli input per prevenire vulnerabilità come l'iniezione NoSQL. Ecco un esempio di come potresti procedere:
+
+1. **Validazione e Conversione di limit e skip**
+
+Assicurati che limit e skip siano numeri e che non superino un certo valore massimo per prevenire richieste eccessive.
+
+```js
+const limit = parseInt(req.query.limit, 10) || 10 // Default a 10 se non fornito
+const skip = parseInt(req.query.skip, 10) || 0 // Default a 0 se non fornito
+
+if (limit > 100) limit = 100 // Imposta un limite massimo
+if (skip < 0) skip = 0 // Impedisce valori negativi
+```
+
+2. **Validazione di sortBy e order:**
+
+Crea un elenco di campi consentiti per l'ordinamento e verifica che sortBy appartenga a questo elenco.
+Assicurati che order sia uno dei valori consentiti, ad esempio asc o desc.
+
+```js
+const validSortFields = ["name", "price", "rating"] // Campi consentiti per l'ordinamento
+const sortBy = validSortFields.includes(req.query.sortBy)
+    ? req.query.sortBy
+    : "name"
+
+const validOrder = ["asc", "desc"]
+const order = validOrder.includes(req.query.order) ? req.query.order : "asc"
+```
+
+3. **Applicazione delle Validazioni nella Query**
+
+Utilizza i valori validati nella query al database.
+
+```js
+const products = await Product.find({
+    $and: [{ price: { $gte: 100 } }, { price: { $lte: 600 } }],
+})
+    .sort({ [sortBy]: order })
+    .limit(limit)
+    .skip(skip)
+```
+
+4. **Gestione degli Errori**
+
+Aggiungi una gestione degli errori adeguata per catturare qualsiasi problema che possa verificarsi durante la validazione o l'interazione con il database.
+Questo approccio riduce significativamente il rischio di iniezione NoSQL e protegge l'applicazione da input malevoli o non validi. Inoltre, limitando i valori di limit e skip, riduci il rischio di sovraccarico del database.
 
 ## Lista dei possibili Query Selectors
 
