@@ -470,6 +470,48 @@ bCrypt è un algoritmo di hashing per password che implementa un meccanismo di "
 
 -   Hashing Multiplo: bCrypt esegue l'hashing della password (con il salt aggiunto) molte volte (o "rounds"). Questo processo di "key stretching" rende l'hashing più lento, il che è un vantaggio dal punto di vista della sicurezza. Rende molto più difficile per un attaccante eseguire attacchi di forza bruta, poiché ogni tentativo di indovinare la password richiede più tempo.
 
+### Come utilizzare bCrypt nel nostro progetto
+
+-   `npm install bcrypt` e importare il pacchetto, poi:
+
+```js
+usersRouter.post("/", async (req, res) => {
+    const password = await bcrypt.hash(req.body.password, 10)
+
+    const newUser = await User.create({
+        ...req.body,
+        password,
+    })
+
+    const { password: _, __v, ...newUserWithoutPassword } = newUser.toObject()
+    res.status(201).json(newUserWithoutPassword)
+})
+```
+
+-   Utilizzando la libreria bcrypt, la password fornita dall'utente nel corpo della richiesta (req.body.password) viene hashata. Il valore 10 indica il "cost factor", ovvero il numero di iterazioni dell'algoritmo di hashing. Successivamente, si procede alla creazione di un nuovo documento utente con User.create di Mongoose, includendo nella creazione l'oggetto utente completo (...req.body) con la password hashata.
+
+-   Per motivi di sicurezza, prima di inviare la risposta al client, la password hashata viene rimossa dall'oggetto utente. Questo passaggio è fondamentale per evitare l'esposizione di dati sensibili, anche se sotto forma di hash. La rimozione avviene attraverso la destrutturazione dell'oggetto, estraendo la password e **v (campo interno di Mongoose) e creando un nuovo oggetto, newUserWithoutPassword, che contiene tutte le proprietà dell'utente eccetto la password e **v.
+
+-   E' importante notare che la password in req.body è in formato non hashato, mentre la variabile password contiene la versione hashata della stessa. Quindi, con `...req.body`, tutti i campi del body della richiesta, inclusa la password originale, vengono copiati. Poi, con password, `la password non hashata viene sovrascritta dalla versione hashata` per garantire la sicurezza nel salvataggio nel database.
+
+-   Concentriamoci su questo comando:
+
+```js
+const { password: _, __v, ...newUserWithoutPassword } = newUser.toObject()
+```
+
+Questo comando utilizza la destrutturazione degli oggetti in JavaScript per ottenere alcune proprietà specifiche dell'oggetto newUser (che è un documento Mongoose). Il metodo toObject() converte il documento Mongoose in un oggetto JavaScript puro.`password: _` prende il campo password dall'oggetto e lo assegna a una variabile chiamata `_`. Questo è un modo comune per indicare che <u>la variabile non verrà utilizzata</u>. In sostanza, stiamo estraendo la password ma poi la ignoriamo.
+`__v` è un campo interno utilizzato da Mongoose per la gestione della versione del documento. Anche questo viene estratto e ignorato.
+`...newUserWithoutPassword` raccoglie tutte le restanti proprietà di newUser (esclusi password e \_\_v) in un nuovo oggetto chiamato newUserWithoutPassword. Oggetto che viene infine resituito al client se tutto è andato a buon fine.
+
+### JWT
+
+### Come utilizzare JWT nel nostro progetto
+
+### OAuth
+
+### Come implementare OAuth nel nostro progetto
+
 # MongoDB Atlas
 
 -   creazione di un'utenza
